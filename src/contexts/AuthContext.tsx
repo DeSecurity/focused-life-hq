@@ -49,7 +49,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     // Listen for auth changes
     const {
       data: { subscription },
-    } = supabase.auth.onAuthStateChange((_event, session) => {
+    } = supabase.auth.onAuthStateChange((event, session) => {
+      console.log('🔄 Auth state changed:', event, { 
+        userId: session?.user?.id, 
+        email: session?.user?.email 
+      });
       setSession(session);
       setUser(session?.user ?? null);
       setLoading(false);
@@ -61,6 +65,12 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const signUp = async (email: string, password: string, username?: string) => {
     try {
       console.log('🔐 Attempting signup for:', email);
+      
+      // Get the correct redirect URL (account for base path if any)
+      const basePath = import.meta.env.BASE_URL || '/';
+      const redirectUrl = `${window.location.origin}${basePath}auth/callback`;
+      console.log('📍 Redirect URL:', redirectUrl);
+      
       const { data, error } = await supabase.auth.signUp({
         email,
         password,
@@ -68,7 +78,7 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
           data: {
             username: username || email.split('@')[0],
           },
-          emailRedirectTo: `${window.location.origin}/auth/callback`,
+          emailRedirectTo: redirectUrl,
         },
       });
 

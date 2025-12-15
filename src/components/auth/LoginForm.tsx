@@ -32,12 +32,21 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
 
       if (error) {
         console.error('❌ Login error:', error);
+        
+        // Provide helpful error messages
+        let errorMessage = error.message || 'Invalid email or password';
+        if (error.message?.includes('Invalid login credentials') || error.message?.includes('Email not confirmed')) {
+          errorMessage = 'Invalid credentials or email not confirmed. Please check your email and click the confirmation link, or try signing up again.';
+        }
+        
         toast({
           title: 'Login failed',
-          description: error.message || 'Invalid email or password',
+          description: errorMessage,
           variant: 'destructive',
+          duration: 8000,
         });
         setIsLoading(false);
+        return;
       } else {
         // Verify session was created
         const { data: { session } } = await supabase.auth.getSession();

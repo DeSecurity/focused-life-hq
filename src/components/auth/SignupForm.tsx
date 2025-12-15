@@ -24,11 +24,26 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
   const [isLoading, setIsLoading] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
+    console.log('🎯 handleSubmit called!', { 
+      type: e.type, 
+      email, 
+      hasPassword: !!password,
+      isLoading,
+      loading 
+    });
+    
     e.preventDefault();
+    e.stopPropagation(); // Prevent any bubbling
+    
+    if (isLoading || loading) {
+      console.log('⚠️ Already processing, ignoring submit');
+      return;
+    }
+
     setIsLoading(true);
+    console.log('📝 Starting signup process...', { email, hasPassword: !!password });
 
     try {
-      console.log('📝 Starting signup process...');
       const { error } = await signUp(email, password, username);
 
       if (error) {
@@ -39,27 +54,51 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
           variant: 'destructive',
         });
         setIsLoading(false);
+        return;
+      }
+
+      // Wait a moment for auth state to update
+      await new Promise(resolve => setTimeout(resolve, 500));
+      
+      // Check if we have a session (user is logged in immediately)
+      const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+      
+      if (sessionError) {
+        console.error('❌ Error getting session:', sessionError);
+      }
+      
+      console.log('📊 Session check after signup:', { 
+        hasSession: !!session, 
+        userId: session?.user?.id,
+        email: session?.user?.email 
+      });
+      
+      if (session) {
+        console.log('✅ User signed up and logged in successfully');
+        toast({
+          title: 'Account created!',
+          description: 'Welcome! You have been signed in.',
+        });
+        // The auth state change listener will handle navigation automatically
+        // Give it a moment to update
+        setTimeout(() => {
+          setIsLoading(false);
+        }, 1000);
       } else {
-        // Check if we have a session (user is logged in immediately)
-        // If not, they need to confirm their email
-        const { data: { session } } = await supabase.auth.getSession();
-        
-        if (session) {
-          toast({
-            title: 'Account created!',
-            description: 'Welcome! You have been signed in.',
-          });
-          // The auth state change will handle navigation
-        } else {
-          toast({
-            title: 'Account created!',
-            description: 'Please check your email to verify your account before signing in.',
-          });
-        }
+        console.log('⚠️ User created but no session - email confirmation may be required');
+        toast({
+          title: 'Account created! ✅',
+          description: 'Please check your email (including spam folder) and click the confirmation link before signing in.',
+          duration: 10000, // Show for 10 seconds
+        });
+        // Clear the form
+        setEmail('');
+        setPassword('');
+        setUsername('');
         setIsLoading(false);
       }
     } catch (err: any) {
-      console.error('Unexpected signup error:', err);
+      console.error('💥 Unexpected signup error:', err);
       toast({
         title: 'Sign up failed',
         description: err.message || 'An unexpected error occurred',
@@ -91,7 +130,17 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
         <p className="text-muted-foreground">Get started with your free account</p>
       </div>
 
-      <form onSubmit={handleSubmit} className="space-y-4">
+      <form 
+        onSubmit={handleSubmit} 
+        className="space-y-4"
+        noValidate
+        onKeyDown={(e) => {
+          if (e.key === 'Enter' && (e.target as HTMLElement).tagName !== 'TEXTAREA') {
+            e.preventDefault();
+            handleSubmit(e as any);
+          }
+        }}
+      >
         <div className="space-y-2">
           <Label htmlFor="username">Username (optional)</Label>
           <div className="relative">
@@ -145,9 +194,29 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
         </div>
 
         <Button
-          type="submit"
+          type="button"
           className="w-full"
           disabled={isLoading || loading}
+          onClick={(e) => {
+            console.log('🔘 Button clicked!', { isLoading, loading, email, hasPassword: !!password });
+            e.preventDefault();
+            e.stopPropagation();
+            
+            // Manually trigger form submission
+            if (!isLoading && !loading && email && password) {
+              const formEvent = new Event('submit', { bubbles: true, cancelable: true });
+              const form = e.currentTarget.closest('form');
+              if (form) {
+                handleSubmit(formEvent as any);
+              } else {
+                console.error('❌ Could not find form element');
+                // Fallback: call handleSubmit directly
+                handleSubmit(e as any);
+              }
+            } else {
+              console.warn('⚠️ Cannot submit:', { isLoading, loading, hasEmail: !!email, hasPassword: !!password });
+            }
+          }}
         >
           {isLoading || loading ? (
             <>
