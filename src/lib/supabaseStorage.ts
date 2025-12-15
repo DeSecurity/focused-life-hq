@@ -14,6 +14,13 @@ const APP_VERSION = '1.0.0';
  */
 export async function loadData(userId: string): Promise<AppData | null> {
   try {
+    // Check if Supabase is configured
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      console.error('Supabase is not configured. Please set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY in your .env file');
+      throw new Error('Supabase not configured');
+    }
+
     const { data, error } = await supabase
       .from('user_data')
       .select('*')
@@ -26,7 +33,7 @@ export async function loadData(userId: string): Promise<AppData | null> {
         return null;
       }
       console.error('Error loading data from Supabase:', error);
-      return null;
+      throw error;
     }
 
     if (!data || !data.data) {
@@ -36,7 +43,7 @@ export async function loadData(userId: string): Promise<AppData | null> {
     return data.data as AppData;
   } catch (error) {
     console.error('Error loading data from Supabase:', error);
-    return null;
+    throw error;
   }
 }
 

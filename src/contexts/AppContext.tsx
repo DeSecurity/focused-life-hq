@@ -18,12 +18,14 @@ import {
   ProjectStatus,
   Priority,
 } from '@/lib/types';
-import { initializeData, saveData, setCurrentProfileId, resetData } from '@/lib/storage';
+import { initializeData, saveData, setCurrentProfileId, resetData } from '@/lib/supabaseStorage';
+import { useAuth } from './AuthContext';
 
 interface AppContextType {
   // Data
-  data: AppData;
-  currentProfile: Profile;
+  data: AppData | null;
+  currentProfile: Profile | null;
+  dataLoading: boolean;
   
   // Navigation
   currentView: ViewType;
@@ -86,38 +88,65 @@ interface AppContextType {
 const AppContext = createContext<AppContextType | null>(null);
 
 export function AppProvider({ children }: { children: React.ReactNode }) {
-  const [data, setData] = useState<AppData>(() => initializeData());
+  const { user } = useAuth();
+  const [data, setData] = useState<AppData | null>(null);
+  const [dataLoading, setDataLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewType>('today');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
+  // Load data when user changes
+  useEffect(() => {
+    if (user) {
+      setDataLoading(true);
+      initializeData(user.id)
+        .then((loadedData) => {
+          setData(loadedData);
+          setDataLoading(false);
+        })
+        .catch((error) => {
+          console.error('Failed to load data:', error);
+          setDataLoading(false);
+          // Still set data to null so UI can show error state
+          setData(null);
+        });
+    } else {
+      setData(null);
+      setDataLoading(false);
+    }
+  }, [user]);
+  
   // Get current profile
-  const currentProfile = data.profiles.find(p => p.id === data.currentProfileId) || data.profiles[0];
+  const currentProfile = data?.profiles.find(p => p.id === data.currentProfileId) || data?.profiles[0];
   
   // Persist data on changes
-  const persistData = useCallback((newData: AppData) => {
+  const persistData = useCallback(async (newData: AppData) => {
+    if (!user) return;
     setData(newData);
-    saveData(newData);
-  }, []);
+    await saveData(user.id, newData);
+  }, [user]);
   
   // Update current profile helper
-  const updateCurrentProfile = useCallback((updates: Partial<Profile>) => {
+  const updateCurrentProfile = useCallback(async (updates: Partial<Profile>) => {
+    if (!data || !currentProfile) return;
     const newProfiles = data.profiles.map(p => 
       p.id === currentProfile.id ? { ...p, ...updates } : p
     );
-    persistData({ ...data, profiles: newProfiles });
-  }, [data, currentProfile.id, persistData]);
+    await persistData({ ...data, profiles: newProfiles });
+  }, [data, currentProfile, persistData]);
   
   // Profile actions
-  const switchProfile = useCallback((profileId: string) => {
+  const switchProfile = useCallback(async (profileId: string) => {
+    if (!data || !user) return;
     if (data.profiles.some(p => p.id === profileId)) {
-      setCurrentProfileId(profileId);
+      await setCurrentProfileId(user.id, profileId);
       persistData({ ...data, currentProfileId: profileId });
     }
-  }, [data, persistData]);
+  }, [data, user, persistData]);
   
-  const createProfile = useCallback((name: string) => {
+  const createProfile = useCallback(async (name: string) => {
+    if (!data) return;
     const newProfile: Profile = {
       id: uuidv4(),
       name,
@@ -134,45 +163,50 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
         hideCompletedTasks: false,
       },
     };
-    persistData({ ...data, profiles: [...data.profiles, newProfile] });
+    await persistData({ ...data, profiles: [...data.profiles, newProfile] });
   }, [data, persistData]);
   
-  const renameProfile = useCallback((profileId: string, name: string) => {
+  const renameProfile = useCallback(async (profileId: string, name: string) => {
+    if (!data) return;
     const newProfiles = data.profiles.map(p => 
       p.id === profileId ? { ...p, name } : p
     );
-    persistData({ ...data, profiles: newProfiles });
+    await persistData({ ...data, profiles: newProfiles });
   }, [data, persistData]);
   
-  const deleteProfile = useCallback((profileId: string) => {
-    if (data.profiles.length <= 1) return;
+  const deleteProfile = useCallback(async (profileId: string) => {
+    if (!data || !user || data.profiles.length <= 1) return;
     const newProfiles = data.profiles.filter(p => p.id !== profileId);
     const newCurrentId = data.currentProfileId === profileId 
       ? newProfiles[0].id 
       : data.currentProfileId;
-    setCurrentProfileId(newCurrentId);
-    persistData({ ...data, profiles: newProfiles, currentProfileId: newCurrentId });
-  }, [data, persistData]);
+    await setCurrentProfileId(user.id, newCurrentId);
+    await persistData({ ...data, profiles: newProfiles, currentProfileId: newCurrentId });
+  }, [data, user, persistData]);
   
   // Area actions
-  const createArea = useCallback((area: Omit<Area, 'id'>) => {
+  const createArea = useCallback(async (area: Omit<Area, 'id'>) => {
+    if (!currentProfile) return;
     const newArea: Area = { ...area, id: uuidv4() };
-    updateCurrentProfile({ areas: [...currentProfile.areas, newArea] });
-  }, [currentProfile.areas, updateCurrentProfile]);
+    await updateCurrentProfile({ areas: [...currentProfile.areas, newArea] });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateArea = useCallback((id: string, updates: Partial<Area>) => {
+  const updateArea = useCallback(async (id: string, updates: Partial<Area>) => {
+    if (!currentProfile) return;
     const newAreas = currentProfile.areas.map(a => 
       a.id === id ? { ...a, ...updates } : a
     );
-    updateCurrentProfile({ areas: newAreas });
-  }, [currentProfile.areas, updateCurrentProfile]);
+    await updateCurrentProfile({ areas: newAreas });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const deleteArea = useCallback((id: string) => {
-    updateCurrentProfile({ areas: currentProfile.areas.filter(a => a.id !== id) });
-  }, [currentProfile.areas, updateCurrentProfile]);
+  const deleteArea = useCallback(async (id: string) => {
+    if (!currentProfile) return;
+    await updateCurrentProfile({ areas: currentProfile.areas.filter(a => a.id !== id) });
+  }, [currentProfile, updateCurrentProfile]);
   
   // Project actions
-  const createProject = useCallback((project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
+  const createProject = useCallback(async (project: Omit<Project, 'id' | 'createdAt' | 'updatedAt'>) => {
+    if (!currentProfile) return;
     const now = new Date().toISOString();
     const newProject: Project = {
       ...project,
@@ -180,31 +214,34 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       createdAt: now,
       updatedAt: now,
     };
-    updateCurrentProfile({ projects: [...currentProfile.projects, newProject] });
-  }, [currentProfile.projects, updateCurrentProfile]);
+    await updateCurrentProfile({ projects: [...currentProfile.projects, newProject] });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateProject = useCallback((id: string, updates: Partial<Project>) => {
+  const updateProject = useCallback(async (id: string, updates: Partial<Project>) => {
+    if (!currentProfile) return;
     const newProjects = currentProfile.projects.map(p => 
       p.id === id ? { ...p, ...updates, updatedAt: new Date().toISOString() } : p
     );
-    updateCurrentProfile({ projects: newProjects });
-  }, [currentProfile.projects, updateCurrentProfile]);
+    await updateCurrentProfile({ projects: newProjects });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const deleteProject = useCallback((id: string) => {
+  const deleteProject = useCallback(async (id: string) => {
+    if (!currentProfile) return;
     // Also delete associated tasks
     const newTasks = currentProfile.tasks.filter(t => t.projectId !== id);
-    updateCurrentProfile({ 
+    await updateCurrentProfile({ 
       projects: currentProfile.projects.filter(p => p.id !== id),
       tasks: newTasks,
     });
-  }, [currentProfile.projects, currentProfile.tasks, updateCurrentProfile]);
+  }, [currentProfile, updateCurrentProfile]);
   
-  const archiveProject = useCallback((id: string) => {
-    updateProject(id, { archived: true, status: 'completed' });
+  const archiveProject = useCallback(async (id: string) => {
+    await updateProject(id, { archived: true, status: 'completed' });
   }, [updateProject]);
   
   // Task actions
-  const createTask = useCallback((task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'checklistItems'> & { checklistItems?: Task['checklistItems'] }) => {
+  const createTask = useCallback(async (task: Omit<Task, 'id' | 'createdAt' | 'updatedAt' | 'checklistItems'> & { checklistItems?: Task['checklistItems'] }) => {
+    if (!currentProfile) return;
     const now = new Date().toISOString();
     const newTask: Task = {
       ...task,
@@ -213,10 +250,11 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updatedAt: now,
       checklistItems: task.checklistItems || [],
     };
-    updateCurrentProfile({ tasks: [...currentProfile.tasks, newTask] });
-  }, [currentProfile.tasks, updateCurrentProfile]);
+    await updateCurrentProfile({ tasks: [...currentProfile.tasks, newTask] });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateTask = useCallback((id: string, updates: Partial<Task>) => {
+  const updateTask = useCallback(async (id: string, updates: Partial<Task>) => {
+    if (!currentProfile) return;
     const newTasks = currentProfile.tasks.map(t => {
       if (t.id === id) {
         const updated = { ...t, ...updates, updatedAt: new Date().toISOString() };
@@ -228,46 +266,52 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       }
       return t;
     });
-    updateCurrentProfile({ tasks: newTasks });
-  }, [currentProfile.tasks, updateCurrentProfile]);
+    await updateCurrentProfile({ tasks: newTasks });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const deleteTask = useCallback((id: string) => {
-    updateCurrentProfile({ tasks: currentProfile.tasks.filter(t => t.id !== id) });
-  }, [currentProfile.tasks, updateCurrentProfile]);
+  const deleteTask = useCallback(async (id: string) => {
+    if (!currentProfile) return;
+    await updateCurrentProfile({ tasks: currentProfile.tasks.filter(t => t.id !== id) });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateTaskStatus = useCallback((id: string, status: TaskStatus) => {
-    updateTask(id, { status });
+  const updateTaskStatus = useCallback(async (id: string, status: TaskStatus) => {
+    await updateTask(id, { status });
   }, [updateTask]);
   
-  const toggleTaskToday = useCallback((id: string) => {
+  const toggleTaskToday = useCallback(async (id: string) => {
+    if (!currentProfile) return;
     const task = currentProfile.tasks.find(t => t.id === id);
     if (task) {
-      updateTask(id, { isToday: !task.isToday });
+      await updateTask(id, { isToday: !task.isToday });
     }
-  }, [currentProfile.tasks, updateTask]);
+  }, [currentProfile, updateTask]);
   
   // Idea actions
-  const createIdea = useCallback((idea: Omit<Idea, 'id' | 'createdAt'>) => {
+  const createIdea = useCallback(async (idea: Omit<Idea, 'id' | 'createdAt'>) => {
+    if (!currentProfile) return;
     const newIdea: Idea = {
       ...idea,
       id: uuidv4(),
       createdAt: new Date().toISOString(),
     };
-    updateCurrentProfile({ ideas: [...currentProfile.ideas, newIdea] });
-  }, [currentProfile.ideas, updateCurrentProfile]);
+    await updateCurrentProfile({ ideas: [...currentProfile.ideas, newIdea] });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateIdea = useCallback((id: string, updates: Partial<Idea>) => {
+  const updateIdea = useCallback(async (id: string, updates: Partial<Idea>) => {
+    if (!currentProfile) return;
     const newIdeas = currentProfile.ideas.map(i => 
       i.id === id ? { ...i, ...updates } : i
     );
-    updateCurrentProfile({ ideas: newIdeas });
-  }, [currentProfile.ideas, updateCurrentProfile]);
+    await updateCurrentProfile({ ideas: newIdeas });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const deleteIdea = useCallback((id: string) => {
-    updateCurrentProfile({ ideas: currentProfile.ideas.filter(i => i.id !== id) });
-  }, [currentProfile.ideas, updateCurrentProfile]);
+  const deleteIdea = useCallback(async (id: string) => {
+    if (!currentProfile) return;
+    await updateCurrentProfile({ ideas: currentProfile.ideas.filter(i => i.id !== id) });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const convertIdeaToProject = useCallback((ideaId: string) => {
+  const convertIdeaToProject = useCallback(async (ideaId: string) => {
+    if (!currentProfile) return;
     const idea = currentProfile.ideas.find(i => i.id === ideaId);
     if (!idea) return;
     
@@ -284,13 +328,14 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       updatedAt: now,
     };
     
-    updateCurrentProfile({ 
+    await updateCurrentProfile({ 
       projects: [...currentProfile.projects, newProject],
       ideas: currentProfile.ideas.filter(i => i.id !== ideaId),
     });
-  }, [currentProfile.ideas, currentProfile.projects, currentProfile.areas, updateCurrentProfile]);
+  }, [currentProfile, updateCurrentProfile]);
   
-  const convertIdeaToTask = useCallback((ideaId: string, projectId?: string) => {
+  const convertIdeaToTask = useCallback(async (ideaId: string, projectId?: string) => {
+    if (!currentProfile) return;
     const idea = currentProfile.ideas.find(i => i.id === ideaId);
     if (!idea) return;
     
@@ -309,30 +354,33 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       checklistItems: [],
     };
     
-    updateCurrentProfile({ 
+    await updateCurrentProfile({ 
       tasks: [...currentProfile.tasks, newTask],
       ideas: currentProfile.ideas.filter(i => i.id !== ideaId),
     });
-  }, [currentProfile.ideas, currentProfile.tasks, updateCurrentProfile]);
+  }, [currentProfile, updateCurrentProfile]);
   
-  const archiveIdea = useCallback((id: string) => {
-    updateIdea(id, { archived: true });
+  const archiveIdea = useCallback(async (id: string) => {
+    await updateIdea(id, { archived: true });
   }, [updateIdea]);
   
   // Tag actions
-  const createTag = useCallback((tag: Omit<Tag, 'id'>) => {
+  const createTag = useCallback(async (tag: Omit<Tag, 'id'>) => {
+    if (!currentProfile) return;
     const newTag: Tag = { ...tag, id: uuidv4() };
-    updateCurrentProfile({ tags: [...currentProfile.tags, newTag] });
-  }, [currentProfile.tags, updateCurrentProfile]);
+    await updateCurrentProfile({ tags: [...currentProfile.tags, newTag] });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const updateTag = useCallback((id: string, updates: Partial<Tag>) => {
+  const updateTag = useCallback(async (id: string, updates: Partial<Tag>) => {
+    if (!currentProfile) return;
     const newTags = currentProfile.tags.map(t => 
       t.id === id ? { ...t, ...updates } : t
     );
-    updateCurrentProfile({ tags: newTags });
-  }, [currentProfile.tags, updateCurrentProfile]);
+    await updateCurrentProfile({ tags: newTags });
+  }, [currentProfile, updateCurrentProfile]);
   
-  const deleteTag = useCallback((id: string) => {
+  const deleteTag = useCallback(async (id: string) => {
+    if (!currentProfile) return;
     // Remove tag from all entities
     const newProjects = currentProfile.projects.map(p => ({
       ...p,
@@ -347,34 +395,39 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
       tags: i.tags.filter(t => t !== id),
     }));
     
-    updateCurrentProfile({ 
+    await updateCurrentProfile({ 
       tags: currentProfile.tags.filter(t => t.id !== id),
       projects: newProjects,
       tasks: newTasks,
       ideas: newIdeas,
     });
-  }, [currentProfile.tags, currentProfile.projects, currentProfile.tasks, currentProfile.ideas, updateCurrentProfile]);
+  }, [currentProfile, updateCurrentProfile]);
   
   // Settings
-  const updateSettings = useCallback((settings: Partial<Profile['settings']>) => {
-    updateCurrentProfile({ settings: { ...currentProfile.settings, ...settings } });
-  }, [currentProfile.settings, updateCurrentProfile]);
+  const updateSettings = useCallback(async (settings: Partial<Profile['settings']>) => {
+    if (!currentProfile) return;
+    await updateCurrentProfile({ settings: { ...currentProfile.settings, ...settings } });
+  }, [currentProfile, updateCurrentProfile]);
   
   // Reset
-  const resetAllData = useCallback(() => {
-    const newData = resetData();
+  const resetAllData = useCallback(async () => {
+    if (!user) return;
+    const newData = await resetData(user.id);
     setData(newData);
-  }, []);
+  }, [user]);
   
   // Apply theme
   useEffect(() => {
-    document.documentElement.classList.remove('dark', 'light');
-    document.documentElement.classList.add(currentProfile.settings.theme);
-  }, [currentProfile.settings.theme]);
-  
+    if (currentProfile) {
+      document.documentElement.classList.remove('dark', 'light');
+      document.documentElement.classList.add(currentProfile.settings.theme);
+    }
+  }, [currentProfile?.settings.theme]);
+
   const value: AppContextType = {
-    data,
-    currentProfile,
+    data: data || null,
+    currentProfile: currentProfile || null,
+    dataLoading,
     currentView,
     setCurrentView,
     selectedProjectId,

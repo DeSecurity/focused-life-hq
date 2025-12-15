@@ -33,17 +33,29 @@ import {
   AlertDialogTitle,
   AlertDialogTrigger,
 } from '@/components/ui/alert-dialog';
-import { exportData, importData } from '@/lib/storage';
+import { exportData, importData } from '@/lib/supabaseStorage';
+import { useAuth } from '@/contexts/AuthContext';
 import { toast } from '@/hooks/use-toast';
 
 export function SettingsView() {
+  const { user } = useAuth();
   const { currentProfile, updateSettings, resetAllData, renameProfile } = useApp();
+  
+  if (!currentProfile) {
+    return (
+      <div className="p-8 text-center">
+        <p className="text-muted-foreground">Loading settings...</p>
+      </div>
+    );
+  }
+  
   const [profileName, setProfileName] = useState(currentProfile.name);
   const [importJson, setImportJson] = useState('');
   const [showImport, setShowImport] = useState(false);
 
-  const handleExport = () => {
-    const data = exportData();
+  const handleExport = async () => {
+    if (!user) return;
+    const data = await exportData(user.id);
     const blob = new Blob([data], { type: 'application/json' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
@@ -57,8 +69,9 @@ export function SettingsView() {
     });
   };
 
-  const handleImport = () => {
-    const result = importData(importJson);
+  const handleImport = async () => {
+    if (!user) return;
+    const result = await importData(user.id, importJson);
     if (result.success) {
       toast({
         title: 'Data imported',
@@ -273,7 +286,7 @@ export function SettingsView() {
         {/* App Info */}
         <section className="text-center py-8">
           <p className="text-sm text-muted-foreground">
-            Life PM v1.0.0 • All data stored locally in your browser
+            Life PM v1.0.0 • All data stored securely in the cloud
           </p>
         </section>
       </div>

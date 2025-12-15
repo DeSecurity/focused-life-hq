@@ -25,10 +25,24 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
+    // Check if Supabase is configured
+    const supabaseUrl = import.meta.env.VITE_SUPABASE_URL;
+    if (!supabaseUrl) {
+      // Supabase not configured, skip auth check
+      setLoading(false);
+      return;
+    }
+
     // Get initial session
-    supabase.auth.getSession().then(({ data: { session } }) => {
+    supabase.auth.getSession().then(({ data: { session }, error }) => {
+      if (error) {
+        console.error('Error getting session:', error);
+      }
       setSession(session);
       setUser(session?.user ?? null);
+      setLoading(false);
+    }).catch((error) => {
+      console.error('Failed to get session:', error);
       setLoading(false);
     });
 
@@ -45,22 +59,42 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   }, []);
 
   const signUp = async (email: string, password: string, username?: string) => {
-    const { data, error } = await supabase.auth.signUp({
-      email,
-      password,
-      options: {
-        data: {
-          username: username || email.split('@')[0],
+    try {
+      console.log('🔐 Attempting signup for:', email);
+      const { data, error } = await supabase.auth.signUp({
+        email,
+        password,
+        options: {
+          data: {
+            username: username || email.split('@')[0],
+          },
+          emailRedirectTo: `${window.location.origin}/auth/callback`,
         },
-      },
-    });
+      });
 
-    if (data.user && !error) {
-      setUser(data.user);
-      setSession(data.session);
+      console.log('Signup response:', { 
+        user: data?.user?.id, 
+        session: !!data?.session,
+        error: error?.message 
+      });
+
+      // Supabase may not return a session if email confirmation is required
+      if (data.user && data.session) {
+        // User is immediately signed in (email confirmation disabled)
+        setUser(data.user);
+        setSession(data.session);
+        console.log('✅ User signed up and logged in');
+      } else if (data.user && !data.session) {
+        // User created but needs email confirmation
+        console.log('⚠️ User created but email confirmation required');
+        // Don't set user/session yet - they need to confirm email first
+      }
+
+      return { error };
+    } catch (err: any) {
+      console.error('Signup error:', err);
+      return { error: err as AuthError };
     }
-
-    return { error };
   };
 
   const signIn = async (email: string, password: string) => {

@@ -11,8 +11,10 @@ import {
   ChevronRight,
   Plus,
   Inbox,
+  LogOut,
 } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
+import { useAuth } from '@/contexts/AuthContext';
 import { cn } from '@/lib/utils';
 import { ViewType } from '@/lib/types';
 import { Button } from '@/components/ui/button';
@@ -35,8 +37,11 @@ export function Sidebar() {
     currentProfile,
     setSelectedProjectId,
   } = useApp();
+  const { signOut, user } = useAuth();
 
-  // Calculate badges
+  // Calculate badges (with null check)
+  if (!currentProfile) return null;
+  
   const todayTasks = currentProfile.tasks.filter(t => t.isToday && t.status !== 'done').length;
   const ideasCount = currentProfile.ideas.filter(i => !i.archived).length;
   const inProgressTasks = currentProfile.tasks.filter(t => t.status !== 'done').length;
@@ -210,9 +215,9 @@ export function Sidebar() {
         ))}
       </div>
 
-      {/* Profile Indicator */}
-      {!sidebarCollapsed && (
-        <div className="p-3 border-t border-sidebar-border">
+      {/* Profile Indicator & Sign Out */}
+      <div className="p-3 border-t border-sidebar-border space-y-2">
+        {!sidebarCollapsed && (
           <div className="flex items-center gap-3 px-3 py-2 rounded-lg bg-sidebar-accent/50">
             <div className="h-8 w-8 rounded-full bg-gradient-to-br from-primary/50 to-accent/50 flex items-center justify-center">
               <span className="text-sm font-medium text-foreground">
@@ -228,8 +233,27 @@ export function Sidebar() {
               </p>
             </div>
           </div>
-        </div>
-      )}
+        )}
+        <Tooltip delayDuration={0}>
+          <TooltipTrigger asChild>
+            <Button
+              variant="ghost"
+              size={sidebarCollapsed ? "icon" : "default"}
+              onClick={() => signOut()}
+              className={cn(
+                "w-full text-sidebar-foreground hover:text-sidebar-accent-foreground hover:bg-sidebar-accent",
+                sidebarCollapsed ? "h-8 w-8" : "justify-start gap-2"
+              )}
+            >
+              <LogOut className="h-4 w-4" />
+              {!sidebarCollapsed && <span>Sign Out</span>}
+            </Button>
+          </TooltipTrigger>
+          {sidebarCollapsed && (
+            <TooltipContent side="right">Sign Out</TooltipContent>
+          )}
+        </Tooltip>
+      </div>
     </aside>
   );
 }

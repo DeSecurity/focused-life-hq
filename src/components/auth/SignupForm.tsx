@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -26,22 +27,46 @@ export function SignupForm({ onSwitchToLogin }: SignupFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signUp(email, password, username);
+    try {
+      console.log('📝 Starting signup process...');
+      const { error } = await signUp(email, password, username);
 
-    if (error) {
+      if (error) {
+        console.error('❌ Signup error:', error);
+        toast({
+          title: 'Sign up failed',
+          description: error.message || 'Failed to create account',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+      } else {
+        // Check if we have a session (user is logged in immediately)
+        // If not, they need to confirm their email
+        const { data: { session } } = await supabase.auth.getSession();
+        
+        if (session) {
+          toast({
+            title: 'Account created!',
+            description: 'Welcome! You have been signed in.',
+          });
+          // The auth state change will handle navigation
+        } else {
+          toast({
+            title: 'Account created!',
+            description: 'Please check your email to verify your account before signing in.',
+          });
+        }
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Unexpected signup error:', err);
       toast({
         title: 'Sign up failed',
-        description: error.message || 'Failed to create account',
+        description: err.message || 'An unexpected error occurred',
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'Account created!',
-        description: 'Please check your email to verify your account.',
-      });
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const handleGoogleSignIn = async () => {

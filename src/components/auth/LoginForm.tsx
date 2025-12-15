@@ -4,6 +4,7 @@
 
 import { useState } from 'react';
 import { useAuth } from '@/contexts/AuthContext';
+import { supabase } from '@/lib/supabase';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
@@ -25,22 +26,47 @@ export function LoginForm({ onSwitchToSignup }: LoginFormProps) {
     e.preventDefault();
     setIsLoading(true);
 
-    const { error } = await signIn(email, password);
+    try {
+      console.log('🔑 Attempting login for:', email);
+      const { error } = await signIn(email, password);
 
-    if (error) {
+      if (error) {
+        console.error('❌ Login error:', error);
+        toast({
+          title: 'Login failed',
+          description: error.message || 'Invalid email or password',
+          variant: 'destructive',
+        });
+        setIsLoading(false);
+      } else {
+        // Verify session was created
+        const { data: { session } } = await supabase.auth.getSession();
+        if (session) {
+          console.log('✅ Login successful, session created');
+          toast({
+            title: 'Welcome back!',
+            description: 'You have been successfully logged in.',
+          });
+          // Auth state change will handle navigation
+        } else {
+          console.warn('⚠️ Login succeeded but no session found');
+          toast({
+            title: 'Login issue',
+            description: 'Please try again or check your email confirmation.',
+            variant: 'destructive',
+          });
+        }
+        setIsLoading(false);
+      }
+    } catch (err: any) {
+      console.error('Unexpected login error:', err);
       toast({
         title: 'Login failed',
-        description: error.message || 'Invalid email or password',
+        description: err.message || 'An unexpected error occurred',
         variant: 'destructive',
       });
-    } else {
-      toast({
-        title: 'Welcome back!',
-        description: 'You have been successfully logged in.',
-      });
+      setIsLoading(false);
     }
-
-    setIsLoading(false);
   };
 
   const handleGoogleSignIn = async () => {
