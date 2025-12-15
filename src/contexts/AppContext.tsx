@@ -100,16 +100,30 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   useEffect(() => {
     if (user) {
       setDataLoading(true);
+      console.log('📥 Loading data for user:', user.id);
       initializeData(user.id)
         .then((loadedData) => {
+          console.log('✅ Data loaded successfully:', { 
+            profiles: loadedData.profiles.length,
+            currentProfile: loadedData.currentProfileId 
+          });
           setData(loadedData);
           setDataLoading(false);
         })
         .catch((error) => {
-          console.error('Failed to load data:', error);
-          setDataLoading(false);
-          // Still set data to null so UI can show error state
-          setData(null);
+          console.error('❌ Failed to load data:', error);
+          // Even if loading fails, try to initialize with default data
+          initializeData(user.id)
+            .then((defaultData) => {
+              console.log('✅ Initialized with default data');
+              setData(defaultData);
+              setDataLoading(false);
+            })
+            .catch((initError) => {
+              console.error('❌ Failed to initialize data:', initError);
+              setDataLoading(false);
+              setData(null);
+            });
         });
     } else {
       setData(null);

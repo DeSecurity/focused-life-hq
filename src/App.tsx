@@ -32,7 +32,8 @@ function AuthCallback() {
 
       if (error) {
         console.error('OAuth error:', error);
-        window.location.href = '/';
+        const basePath = import.meta.env.BASE_URL || '/';
+        window.location.href = basePath;
         return;
       }
 
@@ -40,7 +41,8 @@ function AuthCallback() {
         // Supabase handles the token exchange automatically
         // Just wait a moment for the session to be set
         await new Promise(resolve => setTimeout(resolve, 1000));
-        window.location.href = '/';
+        const basePath = import.meta.env.BASE_URL || '/';
+        window.location.href = basePath;
       }
     };
 
@@ -145,6 +147,7 @@ const App = () => (
   <QueryClientProvider client={queryClient}>
     <TooltipProvider>
       <BrowserRouter
+        basename={import.meta.env.BASE_URL}
         future={{
           v7_startTransition: true,
           v7_relativeSplatPath: true,

@@ -28,12 +28,22 @@ export async function loadData(userId: string): Promise<AppData | null> {
       .single();
 
     if (error) {
+      // Handle different error cases
       if (error.code === 'PGRST116') {
         // No data found, return null to initialize
+        console.log('📭 No existing data found, will initialize new data');
         return null;
       }
-      console.error('Error loading data from Supabase:', error);
-      throw error;
+      
+      // 406 Not Acceptable - might be RLS issue or no data, treat as no data
+      if (error.code === 'PGRST301' || error.message?.includes('406') || error.message?.includes('Not Acceptable')) {
+        console.log('📭 406 error (likely no data or RLS), will initialize new data');
+        return null;
+      }
+      
+      console.error('❌ Error loading data from Supabase:', error);
+      // Don't throw - return null so app can initialize
+      return null;
     }
 
     if (!data || !data.data) {
@@ -41,9 +51,10 @@ export async function loadData(userId: string): Promise<AppData | null> {
     }
 
     return data.data as AppData;
-  } catch (error) {
-    console.error('Error loading data from Supabase:', error);
-    throw error;
+  } catch (error: any) {
+    console.error('❌ Error loading data from Supabase:', error);
+    // Don't throw - return null so app can initialize with default data
+    return null;
   }
 }
 
