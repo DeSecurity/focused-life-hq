@@ -1,5 +1,6 @@
 import { Sidebar } from './Sidebar';
 import { QuickAddDialog } from '@/components/dialogs/QuickAddDialog';
+import { TaskEditDialog } from '@/components/dialogs/TaskEditDialog';
 import { useApp } from '@/contexts/AppContext';
 
 interface MainLayoutProps {
@@ -18,6 +19,7 @@ export function MainLayout({ children }: MainLayoutProps) {
         </div>
       </main>
       <QuickAddDialog />
+      <TaskEditDialog />
     </div>
   );
 }

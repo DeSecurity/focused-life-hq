@@ -35,7 +35,7 @@ const priorityDots: Record<Priority, string> = {
 };
 
 export function TaskCard({ task, showProject = true, isDraggable = true }: TaskCardProps) {
-  const { currentProfile, updateTaskStatus, toggleTaskToday, deleteTask } = useApp();
+  const { currentProfile, updateTaskStatus, toggleTaskToday, deleteTask, setSelectedTaskId } = useApp();
   
   const {
     attributes,
@@ -74,6 +74,12 @@ export function TaskCard({ task, showProject = true, isDraggable = true }: TaskC
     updateTaskStatus(task.id, isDone ? 'todo' : 'done');
   };
 
+  const handleDoubleClick = (e: React.MouseEvent) => {
+    // Prevent double-click from triggering drag
+    e.stopPropagation();
+    setSelectedTaskId(task.id);
+  };
+
   return (
     <div
       ref={setNodeRef}
@@ -84,24 +90,24 @@ export function TaskCard({ task, showProject = true, isDraggable = true }: TaskC
         priorityColors[task.priority],
         'border-l-2',
         isDragging && 'opacity-50 shadow-xl',
-        isDone && 'opacity-60'
+        isDone && 'opacity-60',
+        isDraggable && 'cursor-grab active:cursor-grabbing'
       )}
+      {...(isDraggable ? { ...attributes, ...listeners } : {})}
+      onDoubleClick={handleDoubleClick}
     >
       <div className="flex gap-3">
-        {/* Drag Handle */}
+        {/* Drag Handle (visual indicator only) */}
         {isDraggable && (
-          <button
-            {...attributes}
-            {...listeners}
-            className="opacity-0 group-hover:opacity-100 transition-opacity cursor-grab active:cursor-grabbing text-muted-foreground hover:text-foreground"
-          >
+          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground pointer-events-none">
             <GripVertical className="h-4 w-4" />
-          </button>
+          </div>
         )}
 
         {/* Checkbox */}
         <button
           onClick={handleToggleDone}
+          onMouseDown={(e) => e.stopPropagation()}
           className={cn(
             'mt-0.5 shrink-0 transition-colors',
             isDone ? 'text-status-done' : 'text-muted-foreground hover:text-primary'
@@ -130,6 +136,7 @@ export function TaskCard({ task, showProject = true, isDraggable = true }: TaskC
                   variant="ghost"
                   size="icon"
                   className="h-6 w-6 opacity-0 group-hover:opacity-100 transition-opacity"
+                  onMouseDown={(e) => e.stopPropagation()}
                 >
                   <MoreHorizontal className="h-4 w-4" />
                 </Button>

@@ -56,6 +56,7 @@ export interface Task {
   updatedAt: string;
   completedAt?: string;
   checklistItems: ChecklistItem[];
+  order?: number; // Order within the status column (lower = higher in list)
 }
 
 export interface Project {

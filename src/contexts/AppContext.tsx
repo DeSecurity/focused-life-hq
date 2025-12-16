@@ -80,6 +80,10 @@ interface AppContextType {
   quickAddOpen: boolean;
   setQuickAddOpen: (open: boolean) => void;
   
+  // Task editing
+  selectedTaskId: string | null;
+  setSelectedTaskId: (id: string | null) => void;
+  
   // Sidebar
   sidebarCollapsed: boolean;
   setSidebarCollapsed: (collapsed: boolean) => void;
@@ -94,6 +98,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [currentView, setCurrentView] = useState<ViewType>('today');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
+  const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
   
   // Load data when user changes
@@ -475,6 +480,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     resetAllData,
     quickAddOpen,
     setQuickAddOpen,
+    selectedTaskId,
+    setSelectedTaskId,
     sidebarCollapsed,
     setSidebarCollapsed,
   };
