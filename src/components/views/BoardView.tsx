@@ -165,106 +165,74 @@ export function BoardView() {
     setActiveTask(null);
     setOverId(null);
 
-    if (!over) return;
+    if (!over) {
+      return;
+    }
 
     const taskId = active.id as string;
     const task = currentProfile.tasks.find(t => t.id === taskId);
-    if (!task) return;
+    if (!task) {
+      return;
+    }
 
-    // Debug logging
-    console.log('Drag end:', { 
-      taskId, 
-      taskStatus: task.status, 
-      overId: over.id, 
-      overIdType: typeof over.id 
-    });
+    // Determine target column status
+    let targetStatus: TaskStatus | null = null;
 
-    // Check if dropped on another task
+    // First, check if we dropped on a task
     const overTask = currentProfile.tasks.find(t => t.id === over.id);
-    
     if (overTask) {
-      // Dropped on a task
-      console.log('Dropped on task:', { 
-        overTaskId: overTask.id, 
-        overTaskStatus: overTask.status,
-        taskStatus: task.status 
-      });
-      
-      if (overTask.status !== task.status) {
-        // Dropped on a task in a different column - move to that column
-        console.log('Moving to different column:', overTask.status);
-        updateTaskStatus(taskId, overTask.status);
-        // Set order based on position relative to the task it was dropped on
-        const tasksInNewStatus = tasksByStatus[overTask.status];
-        const overIndex = tasksInNewStatus.findIndex(t => t.id === overTask.id);
-        const newOrder = overTask.order ?? overIndex;
-        updateTask(taskId, { order: newOrder });
-        return;
-      } else {
-        // Reordering within the same column
-        const tasksInStatus = [...tasksByStatus[task.status]]; // Create a copy
-        const oldIndex = tasksInStatus.findIndex(t => t.id === taskId);
-        const newIndex = tasksInStatus.findIndex(t => t.id === overTask.id);
-
-        if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
-          // Reorder the tasks array
-          const reorderedTasks = arrayMove(tasksInStatus, oldIndex, newIndex);
-          
-          // Update order for all tasks in the affected range to ensure consistency
-          const startIndex = Math.min(oldIndex, newIndex);
-          const endIndex = Math.max(oldIndex, newIndex);
-          
-          // Update all tasks in the affected range
-          for (let i = startIndex; i <= endIndex; i++) {
-            const taskToUpdate = reorderedTasks[i];
-            if (taskToUpdate && taskToUpdate.order !== i) {
-              updateTask(taskToUpdate.id, { order: i });
-            }
-          }
+      targetStatus = overTask.status;
+    } else if (typeof over.id === 'string') {
+      // Check if dropped on a SortableContext (format: "sortable-{status}")
+      if (over.id.startsWith('sortable-')) {
+        targetStatus = over.id.replace('sortable-', '') as TaskStatus;
+      }
+      // Check if dropped on column content droppable
+      else if (over.id.startsWith('column-content-')) {
+        targetStatus = over.id.replace('column-content-', '') as TaskStatus;
+      }
+      // Check if dropped on column droppable
+      else if (over.id.startsWith('column-') && !over.id.includes('content')) {
+        targetStatus = over.id.replace('column-', '') as TaskStatus;
+      }
+      // Try to get from droppable data
+      else if (over.data?.current) {
+        const droppableData = over.data.current as { type?: string; status?: TaskStatus };
+        if (droppableData.type === 'column' && droppableData.status) {
+          targetStatus = droppableData.status;
         }
-        return;
       }
     }
 
-    // Check if dropped on a column (format: "column-{status}" or "column-content-{status}") - empty area
-    if (typeof over.id === 'string') {
-      let newStatus: TaskStatus | null = null;
-      
-      // Try to get status from droppable data first
-      if (over.data?.current) {
-        const droppableData = over.data.current as { type?: string; status?: TaskStatus };
-        if (droppableData.type === 'column' && droppableData.status) {
-          newStatus = droppableData.status;
-          console.log('Got status from droppable data:', newStatus);
+    // If we found a target status and it's different from current, move the task
+    if (targetStatus && COLUMNS.some(c => c.id === targetStatus) && targetStatus !== task.status) {
+      updateTaskStatus(taskId, targetStatus);
+      const tasksInNewStatus = tasksByStatus[targetStatus];
+      const maxOrder = tasksInNewStatus.length > 0 
+        ? Math.max(...tasksInNewStatus.map(t => t.order ?? 0), -1) + 1
+        : 0;
+      updateTask(taskId, { order: maxOrder });
+      return;
+    }
+
+    // If same column and dropped on a task, reorder
+    if (overTask && overTask.status === task.status) {
+      const tasksInStatus = [...tasksByStatus[task.status]];
+      const oldIndex = tasksInStatus.findIndex(t => t.id === taskId);
+      const newIndex = tasksInStatus.findIndex(t => t.id === overTask.id);
+
+      if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
+        const reorderedTasks = arrayMove(tasksInStatus, oldIndex, newIndex);
+        const startIndex = Math.min(oldIndex, newIndex);
+        const endIndex = Math.max(oldIndex, newIndex);
+        
+        for (let i = startIndex; i <= endIndex; i++) {
+          const taskToUpdate = reorderedTasks[i];
+          if (taskToUpdate && taskToUpdate.order !== i) {
+            updateTask(taskToUpdate.id, { order: i });
+          }
         }
       }
-      
-      // Fallback to parsing ID
-      if (!newStatus) {
-        if (over.id.startsWith('column-content-')) {
-          newStatus = over.id.replace('column-content-', '') as TaskStatus;
-          console.log('Dropped on column content:', newStatus);
-        } else if (over.id.startsWith('column-') && !over.id.includes('content')) {
-          newStatus = over.id.replace('column-', '') as TaskStatus;
-          console.log('Dropped on column:', newStatus);
-        }
-      }
-      
-      if (newStatus && COLUMNS.some(c => c.id === newStatus) && newStatus !== task.status) {
-        console.log('Moving to column:', newStatus);
-        // Moving to different column - update status and set order to end
-        updateTaskStatus(taskId, newStatus);
-        // Set order to be at the end of the new column
-        const tasksInNewStatus = tasksByStatus[newStatus];
-        const maxOrder = tasksInNewStatus.length > 0 
-          ? Math.max(...tasksInNewStatus.map(t => t.order ?? 0), -1) + 1
-          : 0;
-        updateTask(taskId, { order: maxOrder });
-      } else {
-        console.log('No valid column drop detected', { newStatus, taskStatus: task.status });
-      }
-    } else {
-      console.log('Over ID is not a string:', over.id, 'Type:', typeof over.id);
     }
   };
 
@@ -321,7 +289,7 @@ export function BoardView() {
       <div className="flex-1 overflow-x-auto p-6">
         <DndContext
           sensors={sensors}
-          collisionDetection={rectIntersection}
+          collisionDetection={closestCenter}
           onDragStart={handleDragStart}
           onDragOver={handleDragOver}
           onDragEnd={handleDragEnd}
@@ -349,18 +317,24 @@ export function BoardView() {
                   <SortableContext
                     items={tasksByStatus[column.id].map(t => t.id)}
                     strategy={verticalListSortingStrategy}
+                    id={`sortable-${column.id}`}
                   >
                     {tasksByStatus[column.id].map(task => (
                       <TaskCard key={task.id} task={task} />
                     ))}
                   </SortableContext>
 
-                  {/* Empty Drop Zone */}
-                  {tasksByStatus[column.id].length === 0 && (
-                    <div className="min-h-[60px] rounded-lg border-2 border-dashed border-border flex items-center justify-center">
-                      <span className="text-sm text-muted-foreground">Drop tasks here</span>
-                    </div>
-                  )}
+                  {/* Empty Drop Zone - always present for better drop detection */}
+                  <div 
+                    className="min-h-[60px] rounded-lg border-2 border-dashed border-transparent"
+                    style={{ 
+                      display: tasksByStatus[column.id].length === 0 ? 'flex' : 'none',
+                      alignItems: 'center',
+                      justifyContent: 'center'
+                    }}
+                  >
+                    <span className="text-sm text-muted-foreground">Drop tasks here</span>
+                  </div>
                 </ColumnContentDroppable>
               </ColumnDroppable>
             ))}

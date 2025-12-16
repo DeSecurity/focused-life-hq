@@ -32,6 +32,8 @@ interface AppContextType {
   setCurrentView: (view: ViewType) => void;
   selectedProjectId: string | null;
   setSelectedProjectId: (id: string | null) => void;
+  selectedAreaId: string | null;
+  setSelectedAreaId: (id: string | null) => void;
   
   // Profile actions
   switchProfile: (profileId: string) => void;
@@ -97,6 +99,7 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
   const [dataLoading, setDataLoading] = useState(true);
   const [currentView, setCurrentView] = useState<ViewType>('today');
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
+  const [selectedAreaId, setSelectedAreaId] = useState<string | null>(null);
   const [quickAddOpen, setQuickAddOpen] = useState(false);
   const [selectedTaskId, setSelectedTaskId] = useState<string | null>(null);
   const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
@@ -451,6 +454,8 @@ export function AppProvider({ children }: { children: React.ReactNode }) {
     setCurrentView,
     selectedProjectId,
     setSelectedProjectId,
+    selectedAreaId,
+    setSelectedAreaId,
     switchProfile,
     createProfile,
     renameProfile,

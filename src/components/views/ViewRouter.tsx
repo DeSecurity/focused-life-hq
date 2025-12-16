@@ -8,6 +8,7 @@ import { AreasView } from './AreasView';
 import { CompletedView } from './CompletedView';
 import { SettingsView } from './SettingsView';
 import { ProjectDetailView } from './ProjectDetailView';
+import { AreaDetailView } from './AreaDetailView';
 import { BacklogView } from './BacklogView';
 
 export function ViewRouter() {
@@ -34,6 +35,8 @@ export function ViewRouter() {
       return <SettingsView />;
     case 'project-detail':
       return <ProjectDetailView />;
+    case 'area-detail':
+      return <AreaDetailView />;
     default:
       return <TodayView />;
   }

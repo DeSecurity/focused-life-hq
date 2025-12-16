@@ -112,4 +112,5 @@ export type ViewType =
   | 'completed' 
   | 'settings'
   | 'project-detail'
+  | 'area-detail'
   | 'backlog';

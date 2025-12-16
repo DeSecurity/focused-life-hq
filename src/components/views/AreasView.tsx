@@ -35,7 +35,7 @@ const areaColors: Record<string, string> = {
 };
 
 export function AreasView() {
-  const { currentProfile, setCurrentView, setSelectedProjectId } = useApp();
+  const { currentProfile, setCurrentView, setSelectedAreaId } = useApp();
 
   const areaStats = useMemo(() => {
     return currentProfile.areas.map(area => {
@@ -86,6 +86,10 @@ export function AreasView() {
                 'group relative bg-card rounded-xl border border-border p-5 transition-all duration-200',
                 'hover:border-muted-foreground/30 hover:shadow-lg cursor-pointer'
               )}
+              onDoubleClick={() => {
+                setSelectedAreaId(area.id);
+                setCurrentView('area-detail');
+              }}
             >
               {/* Icon & Title */}
               <div className="flex items-start gap-4 mb-4">
