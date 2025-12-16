@@ -1,18 +1,5 @@
-import React, { useMemo, useState } from 'react';
-import { 
-  DndContext, 
-  closestCenter,
-  rectIntersection,
-  DragOverlay,
-  PointerSensor,
-  useSensor,
-  useSensors,
-  DragEndEvent,
-  DragStartEvent,
-  DragOverEvent,
-  useDroppable,
-} from '@dnd-kit/core';
-import { SortableContext, verticalListSortingStrategy, arrayMove } from '@dnd-kit/sortable';
+import React, { useMemo, useState, useEffect } from 'react';
+import { DragDropContext, Droppable, Draggable, DropResult } from '@hello-pangea/dnd';
 import { CheckSquare, Filter } from 'lucide-react';
 import { useApp } from '@/contexts/AppContext';
 import { Task, TaskStatus } from '@/lib/types';
@@ -34,83 +21,40 @@ const COLUMNS: { id: TaskStatus; label: string; color: string }[] = [
   { id: 'done', label: 'Done', color: 'bg-status-done' },
 ];
 
-// Column Droppable Component
-function ColumnDroppable({ 
-  column, 
-  tasks, 
-  children 
-}: { 
-  column: typeof COLUMNS[0]; 
-  tasks: Task[];
-  children: React.ReactNode;
-}) {
-  const { setNodeRef: setColumnRef, isOver: isColumnOver } = useDroppable({
-    id: `column-${column.id}`,
-    data: {
-      type: 'column',
-      status: column.id,
-    },
-  });
-
-  return (
-    <div
-      ref={setColumnRef}
-      className={cn(
-        'w-80 flex flex-col bg-surface-1 rounded-xl border border-border transition-colors',
-        isColumnOver && 'ring-2 ring-primary ring-offset-2'
-      )}
-    >
-      {children}
-    </div>
-  );
-}
-
-// Column Content Droppable - for detecting drops in the content area
-function ColumnContentDroppable({ 
-  columnId, 
-  children 
-}: { 
-  columnId: TaskStatus;
-  children: React.ReactNode;
-}) {
-  const { setNodeRef, isOver } = useDroppable({
-    id: `column-content-${columnId}`,
-    data: {
-      type: 'column',
-      status: columnId,
-    },
-  });
-
-  return (
-    <div
-      ref={setNodeRef}
-      className={cn(
-        'flex-1 p-3 overflow-y-auto space-y-2 min-h-[200px] relative',
-        isOver && 'bg-primary/5 ring-2 ring-primary/20'
-      )}
-    >
-      {children}
-    </div>
-  );
-}
 
 export function BoardView() {
   const { currentProfile, updateTaskStatus, updateTask } = useApp();
-  const [activeTask, setActiveTask] = useState<Task | null>(null);
   const [projectFilter, setProjectFilter] = useState<string>('all');
   const [areaFilter, setAreaFilter] = useState<string>('all');
-  const [overId, setOverId] = useState<string | null>(null);
+  // Local optimistic state for tasks
+  const [localTasks, setLocalTasks] = useState<Task[]>(currentProfile.tasks);
+  const lastTaskCountRef = React.useRef(currentProfile.tasks.length);
 
-  const sensors = useSensors(
-    useSensor(PointerSensor, {
-      activationConstraint: {
-        distance: 8,
-      },
-    })
-  );
+  // Sync local tasks with context when tasks are added/removed (not reordered)
+  useEffect(() => {
+    const currentTaskCount = currentProfile.tasks.length;
+    
+    // If task count changed, sync (task was added or deleted)
+    if (currentTaskCount !== lastTaskCountRef.current) {
+      setLocalTasks(currentProfile.tasks);
+      lastTaskCountRef.current = currentTaskCount;
+      return;
+    }
+
+    // Check if any task IDs are missing (task was deleted)
+    const localTaskIds = new Set(localTasks.map(t => t.id));
+    const contextTaskIds = new Set(currentProfile.tasks.map(t => t.id));
+    const hasMissingTasks = Array.from(localTaskIds).some(id => !contextTaskIds.has(id));
+    const hasNewTasks = Array.from(contextTaskIds).some(id => !localTaskIds.has(id));
+
+    if (hasMissingTasks || hasNewTasks) {
+      setLocalTasks(currentProfile.tasks);
+      lastTaskCountRef.current = currentTaskCount;
+    }
+  }, [currentProfile.tasks, localTasks]);
 
   const filteredTasks = useMemo(() => {
-    return currentProfile.tasks.filter(task => {
+    return localTasks.filter(task => {
       if (projectFilter !== 'all' && task.projectId !== projectFilter) return false;
       if (areaFilter !== 'all') {
         const taskArea = task.areaId || currentProfile.projects.find(p => p.id === task.projectId)?.areaId;
@@ -118,7 +62,7 @@ export function BoardView() {
       }
       return true;
     });
-  }, [currentProfile.tasks, currentProfile.projects, projectFilter, areaFilter]);
+  }, [localTasks, currentProfile.projects, projectFilter, areaFilter]);
 
   const tasksByStatus = useMemo(() => {
     const grouped: Record<TaskStatus, Task[]> = {
@@ -146,99 +90,148 @@ export function BoardView() {
     return grouped;
   }, [filteredTasks]);
 
-  const handleDragStart = (event: DragStartEvent) => {
-    const { active } = event;
-    const task = currentProfile.tasks.find(t => t.id === active.id);
-    if (task) setActiveTask(task);
-    setOverId(null);
-  };
+  const handleDragEnd = (result: DropResult) => {
+    const { destination, source, draggableId } = result;
 
-  const handleDragOver = (event: DragOverEvent) => {
-    const { over } = event;
-    if (over) {
-      setOverId(over.id as string);
-    }
-  };
-
-  const handleDragEnd = (event: DragEndEvent) => {
-    const { active, over } = event;
-    setActiveTask(null);
-    setOverId(null);
-
-    if (!over) {
+    // If dropped outside a droppable area, do nothing
+    if (!destination) {
       return;
     }
 
-    const taskId = active.id as string;
-    const task = currentProfile.tasks.find(t => t.id === taskId);
+    // If dropped in the same position, do nothing
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
+
+    const taskId = draggableId;
+    const task = localTasks.find(t => t.id === taskId);
     if (!task) {
       return;
     }
 
-    // Determine target column status
-    let targetStatus: TaskStatus | null = null;
-    let overTask: Task | null = null;
+    const sourceStatus = source.droppableId as TaskStatus;
+    const destinationStatus = destination.droppableId as TaskStatus;
 
-    // Check if we dropped on a task
-    overTask = currentProfile.tasks.find(t => t.id === over.id) || null;
-    
-    if (overTask) {
-      // Dropped on a task - use that task's status
-      targetStatus = overTask.status;
-    } else if (typeof over.id === 'string') {
-      // Try to get status from droppable data first (most reliable)
-      if (over.data?.current) {
-        const droppableData = over.data.current as { type?: string; status?: TaskStatus };
-        if (droppableData.type === 'column' && droppableData.status) {
-          targetStatus = droppableData.status;
-        }
-      }
-      
-      // Fallback: parse from ID
-      if (!targetStatus) {
-        if (over.id.startsWith('column-content-')) {
-          targetStatus = over.id.replace('column-content-', '') as TaskStatus;
-        } else if (over.id.startsWith('column-') && !over.id.includes('content')) {
-          targetStatus = over.id.replace('column-', '') as TaskStatus;
-        }
-      }
-    }
-
-    // Validate target status
-    if (!targetStatus || !COLUMNS.some(c => c.id === targetStatus)) {
+    // Validate statuses
+    if (!COLUMNS.some(c => c.id === sourceStatus) || !COLUMNS.some(c => c.id === destinationStatus)) {
       return;
     }
+
+    // Create updated tasks array optimistically
+    const updatedTasks = [...localTasks];
+    const taskIndex = updatedTasks.findIndex(t => t.id === taskId);
+    
+    if (taskIndex === -1) return;
 
     // Handle cross-column move
-    if (targetStatus !== task.status) {
-      updateTaskStatus(taskId, targetStatus);
-      const tasksInNewStatus = tasksByStatus[targetStatus];
-      const maxOrder = tasksInNewStatus.length > 0 
-        ? Math.max(...tasksInNewStatus.map(t => t.order ?? 0), -1) + 1
-        : 0;
-      updateTask(taskId, { order: maxOrder });
-      return;
-    }
+    if (sourceStatus !== destinationStatus) {
+      // Update the task's status and order
+      updatedTasks[taskIndex] = {
+        ...updatedTasks[taskIndex],
+        status: destinationStatus,
+        order: destination.index,
+        updatedAt: new Date().toISOString(),
+      };
 
-    // Handle reordering within same column
-    if (overTask && overTask.status === task.status) {
-      const tasksInStatus = [...tasksByStatus[task.status]];
-      const oldIndex = tasksInStatus.findIndex(t => t.id === taskId);
-      const newIndex = tasksInStatus.findIndex(t => t.id === overTask.id);
+      // Update orders for tasks in destination column that need to shift down
+      const tasksInDestination = updatedTasks.filter(
+        t => t.status === destinationStatus && t.id !== taskId
+      );
+      tasksInDestination.sort((a, b) => {
+        const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
 
-      if (oldIndex !== newIndex && oldIndex !== -1 && newIndex !== -1) {
-        const reorderedTasks = arrayMove(tasksInStatus, oldIndex, newIndex);
-        const startIndex = Math.min(oldIndex, newIndex);
-        const endIndex = Math.max(oldIndex, newIndex);
-        
-        for (let i = startIndex; i <= endIndex; i++) {
-          const taskToUpdate = reorderedTasks[i];
-          if (taskToUpdate && taskToUpdate.order !== i) {
-            updateTask(taskToUpdate.id, { order: i });
-          }
+      for (let i = destination.index; i < tasksInDestination.length; i++) {
+        const shiftedTask = tasksInDestination[i];
+        const shiftedIndex = updatedTasks.findIndex(t => t.id === shiftedTask.id);
+        if (shiftedIndex !== -1) {
+          updatedTasks[shiftedIndex] = {
+            ...updatedTasks[shiftedIndex],
+            order: i + 1,
+            updatedAt: new Date().toISOString(),
+          };
         }
       }
+
+      // Update orders for tasks in source column that need to shift up
+      const tasksInSource = updatedTasks.filter(
+        t => t.status === sourceStatus && t.id !== taskId
+      );
+      tasksInSource.sort((a, b) => {
+        const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+        const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+        if (orderA !== orderB) return orderA - orderB;
+        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+      });
+
+      for (let i = source.index; i < tasksInSource.length; i++) {
+        const shiftedTask = tasksInSource[i];
+        const shiftedIndex = updatedTasks.findIndex(t => t.id === shiftedTask.id);
+        if (shiftedIndex !== -1) {
+          updatedTasks[shiftedIndex] = {
+            ...updatedTasks[shiftedIndex],
+            order: i,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      }
+    } else {
+      // Handle reordering within same column
+      const tasksInStatus = updatedTasks
+        .filter(t => t.status === sourceStatus)
+        .sort((a, b) => {
+          const orderA = a.order ?? Number.MAX_SAFE_INTEGER;
+          const orderB = b.order ?? Number.MAX_SAFE_INTEGER;
+          if (orderA !== orderB) return orderA - orderB;
+          return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
+        });
+
+      const oldIndex = source.index;
+      const newIndex = destination.index;
+
+      // Reorder the array
+      const [movedTask] = tasksInStatus.splice(oldIndex, 1);
+      tasksInStatus.splice(newIndex, 0, movedTask);
+
+      // Update orders for all tasks in the column
+      tasksInStatus.forEach((t, index) => {
+        const taskIndex = updatedTasks.findIndex(task => task.id === t.id);
+        if (taskIndex !== -1 && updatedTasks[taskIndex].order !== index) {
+          updatedTasks[taskIndex] = {
+            ...updatedTasks[taskIndex],
+            order: index,
+            updatedAt: new Date().toISOString(),
+          };
+        }
+      });
     }
+
+    // Optimistically update local state immediately
+    setLocalTasks(updatedTasks);
+
+    // Then persist changes to context (async) - batch updates
+    updatedTasks.forEach(updatedTask => {
+      const originalTask = currentProfile.tasks.find(t => t.id === updatedTask.id);
+      if (originalTask) {
+        // If status changed, use updateTaskStatus (which also updates order if needed)
+        if (originalTask.status !== updatedTask.status) {
+          updateTaskStatus(updatedTask.id, updatedTask.status);
+          // Also update order if it changed
+          if (originalTask.order !== updatedTask.order) {
+            updateTask(updatedTask.id, { order: updatedTask.order });
+          }
+        } else if (originalTask.order !== updatedTask.order) {
+          // Only order changed, just update order
+          updateTask(updatedTask.id, { order: updatedTask.order });
+        }
+      }
+    });
   };
 
   return (
@@ -292,57 +285,66 @@ export function BoardView() {
 
       {/* Board */}
       <div className="flex-1 overflow-x-auto p-6">
-        <DndContext
-          sensors={sensors}
-          collisionDetection={closestCenter}
-          onDragStart={handleDragStart}
-          onDragOver={handleDragOver}
-          onDragEnd={handleDragEnd}
-        >
+        <DragDropContext onDragEnd={handleDragEnd}>
           <div className="flex gap-4 h-full min-w-max">
             {COLUMNS.map(column => (
-              <ColumnDroppable
-                key={column.id}
-                column={column}
-                tasks={tasksByStatus[column.id]}
-              >
-                {/* Column Header */}
-                <div className="p-4 border-b border-border">
-                  <div className="flex items-center gap-2">
-                    <div className={cn('h-2 w-2 rounded-full', column.color)} />
-                    <h3 className="font-semibold text-foreground">{column.label}</h3>
-                    <span className="text-sm text-muted-foreground ml-auto">
-                      {tasksByStatus[column.id].length}
-                    </span>
-                  </div>
-                </div>
-
-                {/* Column Content */}
-                <ColumnContentDroppable columnId={column.id}>
-                  <SortableContext
-                    items={tasksByStatus[column.id].map(t => t.id)}
-                    strategy={verticalListSortingStrategy}
+              <Droppable key={column.id} droppableId={column.id}>
+                {(provided, snapshot) => (
+                  <div
+                    ref={provided.innerRef}
+                    {...provided.droppableProps}
+                    className={cn(
+                      'w-80 flex flex-col bg-surface-1 rounded-xl border border-border transition-colors',
+                      snapshot.isDraggingOver && 'ring-2 ring-primary ring-offset-2'
+                    )}
                   >
-                    {tasksByStatus[column.id].map(task => (
-                      <TaskCard key={task.id} task={task} />
-                    ))}
-                  </SortableContext>
-                  
-                  {/* Empty state indicator */}
-                  {tasksByStatus[column.id].length === 0 && (
-                    <div className="min-h-[60px] rounded-lg border-2 border-dashed border-border flex items-center justify-center mt-2">
-                      <span className="text-sm text-muted-foreground">Drop tasks here</span>
+                    {/* Column Header */}
+                    <div className="p-4 border-b border-border">
+                      <div className="flex items-center gap-2">
+                        <div className={cn('h-2 w-2 rounded-full', column.color)} />
+                        <h3 className="font-semibold text-foreground">{column.label}</h3>
+                        <span className="text-sm text-muted-foreground ml-auto">
+                          {tasksByStatus[column.id].length}
+                        </span>
+                      </div>
                     </div>
-                  )}
-                </ColumnContentDroppable>
-              </ColumnDroppable>
+
+                    {/* Column Content */}
+                    <div className={cn(
+                      'flex-1 p-3 overflow-y-auto space-y-2 min-h-[200px] relative',
+                      snapshot.isDraggingOver && 'bg-primary/5'
+                    )}>
+                      {tasksByStatus[column.id].map((task, index) => (
+                        <Draggable key={task.id} draggableId={task.id} index={index}>
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              {...provided.dragHandleProps}
+                              className={cn(
+                                snapshot.isDragging && 'opacity-50'
+                              )}
+                            >
+                              <TaskCard task={task} />
+                            </div>
+                          )}
+                        </Draggable>
+                      ))}
+                      {provided.placeholder}
+                      
+                      {/* Empty state indicator */}
+                      {tasksByStatus[column.id].length === 0 && (
+                        <div className="min-h-[60px] rounded-lg border-2 border-dashed border-border flex items-center justify-center mt-2">
+                          <span className="text-sm text-muted-foreground">Drop tasks here</span>
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </Droppable>
             ))}
           </div>
-
-          <DragOverlay>
-            {activeTask && <TaskCard task={activeTask} isDraggable={false} />}
-          </DragOverlay>
-        </DndContext>
+        </DragDropContext>
       </div>
     </div>
   );

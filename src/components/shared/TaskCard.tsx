@@ -1,5 +1,3 @@
-import { useSortable } from '@dnd-kit/sortable';
-import { CSS } from '@dnd-kit/utilities';
 import { format, isToday, isTomorrow, isPast } from 'date-fns';
 import { Calendar, CheckCircle2, Circle, Clock, GripVertical, MoreHorizontal, Sun } from 'lucide-react';
 import { Task, Priority } from '@/lib/types';
@@ -17,7 +15,6 @@ import {
 interface TaskCardProps {
   task: Task;
   showProject?: boolean;
-  isDraggable?: boolean;
 }
 
 const priorityColors: Record<Priority, string> = {
@@ -34,22 +31,8 @@ const priorityDots: Record<Priority, string> = {
   low: 'bg-priority-low',
 };
 
-export function TaskCard({ task, showProject = true, isDraggable = true }: TaskCardProps) {
+export function TaskCard({ task, showProject = true }: TaskCardProps) {
   const { currentProfile, updateTaskStatus, toggleTaskToday, deleteTask, setSelectedTaskId } = useApp();
-  
-  const {
-    attributes,
-    listeners,
-    setNodeRef,
-    transform,
-    transition,
-    isDragging,
-  } = useSortable({ id: task.id, disabled: !isDraggable });
-
-  const style = {
-    transform: CSS.Transform.toString(transform),
-    transition,
-  };
 
   const project = task.projectId 
     ? currentProfile.projects.find(p => p.id === task.projectId)
@@ -82,27 +65,21 @@ export function TaskCard({ task, showProject = true, isDraggable = true }: TaskC
 
   return (
     <div
-      ref={setNodeRef}
-      style={style}
       className={cn(
         'group relative bg-card rounded-lg border border-border p-3 transition-all duration-200',
         'hover:border-muted-foreground/30 hover:shadow-lg hover:shadow-black/5',
         priorityColors[task.priority],
         'border-l-2',
-        isDragging && 'opacity-50 shadow-xl',
         isDone && 'opacity-60',
-        isDraggable && 'cursor-grab active:cursor-grabbing'
+        'cursor-grab active:cursor-grabbing'
       )}
-      {...(isDraggable ? { ...attributes, ...listeners } : {})}
       onDoubleClick={handleDoubleClick}
     >
       <div className="flex gap-3">
         {/* Drag Handle (visual indicator only) */}
-        {isDraggable && (
-          <div className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground pointer-events-none">
-            <GripVertical className="h-4 w-4" />
-          </div>
-        )}
+        <div className="opacity-0 group-hover:opacity-100 transition-opacity text-muted-foreground pointer-events-none">
+          <GripVertical className="h-4 w-4" />
+        </div>
 
         {/* Checkbox */}
         <button

@@ -86,7 +86,7 @@ export function AreasView() {
                 'group relative bg-card rounded-xl border border-border p-5 transition-all duration-200',
                 'hover:border-muted-foreground/30 hover:shadow-lg cursor-pointer'
               )}
-              onDoubleClick={() => {
+              onClick={() => {
                 setSelectedAreaId(area.id);
                 setCurrentView('area-detail');
               }}
