@@ -177,35 +177,40 @@ export function BoardView() {
 
     // Determine target column status
     let targetStatus: TaskStatus | null = null;
+    let overTask: Task | null = null;
 
-    // First, check if we dropped on a task
-    const overTask = currentProfile.tasks.find(t => t.id === over.id);
+    // Check if we dropped on a task
+    overTask = currentProfile.tasks.find(t => t.id === over.id) || null;
+    
     if (overTask) {
+      // Dropped on a task - use that task's status
       targetStatus = overTask.status;
     } else if (typeof over.id === 'string') {
-      // Check if dropped on a SortableContext (format: "sortable-{status}")
-      if (over.id.startsWith('sortable-')) {
-        targetStatus = over.id.replace('sortable-', '') as TaskStatus;
-      }
-      // Check if dropped on column content droppable
-      else if (over.id.startsWith('column-content-')) {
-        targetStatus = over.id.replace('column-content-', '') as TaskStatus;
-      }
-      // Check if dropped on column droppable
-      else if (over.id.startsWith('column-') && !over.id.includes('content')) {
-        targetStatus = over.id.replace('column-', '') as TaskStatus;
-      }
-      // Try to get from droppable data
-      else if (over.data?.current) {
+      // Try to get status from droppable data first (most reliable)
+      if (over.data?.current) {
         const droppableData = over.data.current as { type?: string; status?: TaskStatus };
         if (droppableData.type === 'column' && droppableData.status) {
           targetStatus = droppableData.status;
         }
       }
+      
+      // Fallback: parse from ID
+      if (!targetStatus) {
+        if (over.id.startsWith('column-content-')) {
+          targetStatus = over.id.replace('column-content-', '') as TaskStatus;
+        } else if (over.id.startsWith('column-') && !over.id.includes('content')) {
+          targetStatus = over.id.replace('column-', '') as TaskStatus;
+        }
+      }
     }
 
-    // If we found a target status and it's different from current, move the task
-    if (targetStatus && COLUMNS.some(c => c.id === targetStatus) && targetStatus !== task.status) {
+    // Validate target status
+    if (!targetStatus || !COLUMNS.some(c => c.id === targetStatus)) {
+      return;
+    }
+
+    // Handle cross-column move
+    if (targetStatus !== task.status) {
       updateTaskStatus(taskId, targetStatus);
       const tasksInNewStatus = tasksByStatus[targetStatus];
       const maxOrder = tasksInNewStatus.length > 0 
@@ -215,7 +220,7 @@ export function BoardView() {
       return;
     }
 
-    // If same column and dropped on a task, reorder
+    // Handle reordering within same column
     if (overTask && overTask.status === task.status) {
       const tasksInStatus = [...tasksByStatus[task.status]];
       const oldIndex = tasksInStatus.findIndex(t => t.id === taskId);
@@ -317,24 +322,18 @@ export function BoardView() {
                   <SortableContext
                     items={tasksByStatus[column.id].map(t => t.id)}
                     strategy={verticalListSortingStrategy}
-                    id={`sortable-${column.id}`}
                   >
                     {tasksByStatus[column.id].map(task => (
                       <TaskCard key={task.id} task={task} />
                     ))}
                   </SortableContext>
-
-                  {/* Empty Drop Zone - always present for better drop detection */}
-                  <div 
-                    className="min-h-[60px] rounded-lg border-2 border-dashed border-transparent"
-                    style={{ 
-                      display: tasksByStatus[column.id].length === 0 ? 'flex' : 'none',
-                      alignItems: 'center',
-                      justifyContent: 'center'
-                    }}
-                  >
-                    <span className="text-sm text-muted-foreground">Drop tasks here</span>
-                  </div>
+                  
+                  {/* Empty state indicator */}
+                  {tasksByStatus[column.id].length === 0 && (
+                    <div className="min-h-[60px] rounded-lg border-2 border-dashed border-border flex items-center justify-center mt-2">
+                      <span className="text-sm text-muted-foreground">Drop tasks here</span>
+                    </div>
+                  )}
                 </ColumnContentDroppable>
               </ColumnDroppable>
             ))}
